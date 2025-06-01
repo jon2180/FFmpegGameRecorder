@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "FFmpegGameRecorder",
+	"Description": "Game recorder powered by ffmpeg",
+	"Category": "Tool",
+	"CreatedBy": "jon2180",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "FFmpegGameRecorder",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
