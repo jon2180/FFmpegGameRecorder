@@ -18,6 +18,14 @@ namespace recorder
 		Fence = RHICreateGPUFence(RequestName);
 	}
 
+	FRHIGPUTextureReadback::~FRHIGPUTextureReadback()
+	{
+		if (DestinationStagingTexture)
+		{
+			DestinationStagingTexture.SafeRelease();
+		}
+	}
+
 	void FRHIGPUTextureReadback::EnqueueCopyRDG(FRHICommandList& RHICmdList, FRHITexture* SourceTexture,
 	                                            FResolveRect Rect)
 	{

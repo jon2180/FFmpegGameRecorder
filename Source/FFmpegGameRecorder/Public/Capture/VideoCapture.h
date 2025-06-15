@@ -27,6 +27,7 @@ namespace recorder
 		};
 
 		FRHIGPUTextureReadback(FName RequestName, FIntPoint Resolution);
+		~FRHIGPUTextureReadback();
 
 		/** Indicates if the data is in place and ready to be read. */
 		FORCEINLINE bool IsReady() const

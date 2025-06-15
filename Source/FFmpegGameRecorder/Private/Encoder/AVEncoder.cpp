@@ -348,6 +348,11 @@ void FAVEncoder::EncodeVideoFrame(TQueue<FTimeSeq>& VideoTimeSequence, FEncodeDa
 		}
 	}
 	av_frame_unref(filt_frame);
+
+	{
+		av_frame_free(&filt_frame);
+		av_packet_free(&video_pkt);
+	}
 }
 
 void FAVEncoder::EncodeAudioFrame(TQueue<FTimeSeq>& AudioTimeSequence, FEncodeData* rgb)
@@ -420,6 +425,11 @@ void FAVEncoder::EncodeAudioFrame(TQueue<FTimeSeq>& AudioTimeSequence, FEncodeDa
 		av_write_frame(out_format_context, audio_pkt);
 	}
 	av_packet_unref(audio_pkt);
+
+	{
+		// av_frame_free(&audio_frame);
+		av_packet_free(&audio_pkt);
+	}
 }
 
 void FAVEncoder::EndAudioEncoding(TQueue<FTimeSeq>& AudioTimeSequence)
@@ -624,6 +634,7 @@ void FAVEncoder::EncodeFinish()
 		av_write_trailer(out_format_context);
 		avio_close(out_format_context->pb);
 		avformat_free_context(out_format_context);
+		out_format_context = nullptr;
 	}
 
 	if (video_encoder_codec_context)
@@ -631,6 +642,18 @@ void FAVEncoder::EncodeFinish()
 		avcodec_free_context(&video_encoder_codec_context);
 		avcodec_close(video_encoder_codec_context);
 		av_free(video_encoder_codec_context);
+		video_encoder_codec_context = nullptr;
+	}
+
+	if (buffersink_ctx)
+	{
+		avfilter_free(buffersink_ctx);
+		buffersink_ctx = nullptr;
+	}
+	if (buffersrc_ctx)
+	{
+		avfilter_free(buffersrc_ctx);
+		buffersrc_ctx = nullptr;
 	}
 
 	if (audio_encoder_codec_context)
@@ -638,19 +661,45 @@ void FAVEncoder::EncodeFinish()
 		avcodec_free_context(&audio_encoder_codec_context);
 		avcodec_close(audio_encoder_codec_context);
 		av_free(audio_encoder_codec_context);
+		audio_encoder_codec_context = nullptr;
 	}
 	if (audio_swr)
 	{
 		swr_close(audio_swr);
 		swr_free(&audio_swr);
+		audio_swr = nullptr;
 	}
 
 	avfilter_graph_free(&filter_graph);
+	filter_graph = nullptr;
 	avfilter_inout_free(&inputs);
+	inputs = nullptr;
 	avfilter_inout_free(&outputs);
+	outputs = nullptr;
 
 	av_frame_free(&video_frame);
+	video_frame = nullptr;
+
 	av_frame_free(&audio_frame);
+	audio_frame = nullptr;
+
+	// if (out_video_stream)
+	// {
+	// 	// if (stream != NULL) {
+	// 	// 	avcodec_free_context(&stream->codec);
+	// 	// 	avformat_close_input(&stream->inFormatContext);
+	// 	// 	avformat_free_context(stream->outFormatContext);
+	// 	// av_frame_free(&stream->frame);
+	// 	// av_packet_free(&out_video_stream->packet);
+	// 	free(out_video_stream);
+	// 	out_video_stream = nullptr;
+	// }
+	//
+	// if (out_audio_stream)
+	// {
+	// 	free(out_audio_stream);
+	// 	out_audio_stream = nullptr;
+	// }
 }
 
 FAVBufferedEncoder::FAVBufferedEncoder(): ThreadEvent(nullptr)
@@ -950,7 +999,8 @@ void FAVBufferedEncoder::EnqueueAudioFrame_AudioThread(float* AudioData, int Num
 	{
 		FScopeLock Lock(&NewData->ModifyCS);
 		NewData->Data.SetNumUninitialized(NumSamples * NumChannels);
-		FMemory::StreamingMemcpy(NewData->Data.GetData(), AudioData, NumSamples * NumChannels);
+		FMemory::StreamingMemcpy(NewData->Data.GetData(), AudioData,
+			NumSamples * NumChannels * sizeof(TArray<float>::ElementType));
 		NewData->StartSec = PresentTime;
 		NewData->Duration = Duration;
 	}
