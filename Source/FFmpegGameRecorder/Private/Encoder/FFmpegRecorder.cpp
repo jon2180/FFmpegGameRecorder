@@ -94,7 +94,7 @@ void UFFmpegRecorder::InitializeDirector(UWorld* World, FString OutFileName, boo
 	{
 		VideoCapture = MakeShared<FVideoCapture>();
 		VideoCapture->Setup();
-		VideoCapture->RecordConfig = RecordConfig;
+		VideoCapture->Initialize(RecordConfig.Resolution, RecordConfig.CropArea, RecordConfig.FrameRate);
 		VideoCapture->Register(World);
 		VideoCapture->GetOnSendFrame().BindRaw(
 			AVBufferedEncoder.Get(), &FAVBufferedEncoder::EnqueueVideoFrame_RenderThread);

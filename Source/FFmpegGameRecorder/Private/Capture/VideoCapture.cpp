@@ -130,7 +130,7 @@ namespace recorder
 };
 
 
-FVideoCapture::FVideoCapture(): RecordConfig(), GameWindow(nullptr), VideoTickTime(0)
+FVideoCapture::FVideoCapture(): VideoTickTime(0), GameWindow(nullptr)
 {
 }
 
@@ -140,6 +140,12 @@ FVideoCapture::~FVideoCapture()
 
 void FVideoCapture::Register(UWorld* World)
 {
+	if (!bInitialized)
+	{
+		UE_LOG(LogRecorder, Error, TEXT("FVideoCapture::Register: cant register before initialization"));
+		return;	
+	}
+	
 	FSlateApplication::Get().GetRenderer()->OnBackBufferReadyToPresent().AddRaw(
 		this, &FVideoCapture::OnBackBufferReady_RenderThread);
 	// 使用 PreResize，而不是 PostResize，为了保证截取的部分是有效的
@@ -153,12 +159,9 @@ void FVideoCapture::Register(UWorld* World)
 
 void FVideoCapture::Unregister()
 {
-	// 渲染线程执行完了吗.
-	// FScopeLock ScopeLock1(&RenderThreadOK);
-
 	bRecording.store(false);
 	{
-		FScopeLock Lock(&VideoCS);
+		FScopeLock Lock(&VideoCaptureCS);
 		FSlateApplication::Get().GetRenderer()->OnBackBufferReadyToPresent().RemoveAll(this);
 		FSlateApplication::Get().GetRenderer()->OnPreResizeWindowBackBuffer().RemoveAll(this);
 		FSlateApplication::Get().GetRenderer()->OnSlateWindowDestroyed().RemoveAll(this);
@@ -253,7 +256,6 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 		auto ClippedRect = RecordArea;
 		ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
 		{
-			FScopeLock Lock(&VideoCS);
 			Rst = GetOnSendFrame().ExecuteIfBound(
 				TextureData, BackBuffer->GetFormat(), Resolution.X, h, ClippedRect,
 				PreviousGpuReadback->CapturedTime, PreviousGpuReadback->CapturedDuration);
@@ -299,7 +301,6 @@ bool FVideoCapture::CopyTextureToQueue_LockTextureToCpu(const FTexture2DRHIRef& 
 	auto ClippedRect = RecordArea;
 	ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
 	{
-		FScopeLock Lock(&VideoCS);
 		Rst = GetOnSendFrame().ExecuteIfBound(
 			TextureData, BackBuffer->GetFormat(), Resolution.X, h, ClippedRect,
 			CaptureTsInSeconds, DurationInSeconds);
@@ -314,9 +315,10 @@ void FVideoCapture::OnPreResizeWindowBackBuffer(void* BackBuffer)
 	StopRecord();
 }
 
+/** 切记等待和复杂操作 */
 void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const FTexture2DRHIRef& BackBuffer)
 {
-	FScopeLock ScopeLock(&RenderThreadOK);
+	FScopeLock ScopeLock(&VideoCaptureCS);
 	if (!bRecording)
 	{
 		return;
@@ -402,7 +404,7 @@ void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const F
 			BackBuffer,
 			Ct,
 			FApp::GetDeltaTime(),
-			RecordConfig.CropArea);
+			CropArea);
 	}
 	else
 	{
@@ -410,7 +412,7 @@ void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const F
 			BackBuffer,
 			Ct,
 			FApp::GetDeltaTime(),
-			RecordConfig.CropArea);
+			CropArea);
 	}
 	if (RecordRst)
 	{

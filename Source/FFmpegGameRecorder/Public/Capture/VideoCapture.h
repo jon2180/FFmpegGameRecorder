@@ -105,6 +105,9 @@ DECLARE_DELEGATE_SevenParams(FOnSendFrame,
                              FIntRect CaptureRect, double PresentTime, double Duration);
 DECLARE_DELEGATE(FOnForceStopRecord);
 
+/**
+ * 不能再次引用 BackBuffer，否则 Resize 时会因为引用检查而崩溃
+ */
 class FVideoCapture final : public IAVRecorderBase
 {
 public:
@@ -118,6 +121,33 @@ public:
 	FOnSendFrame& GetOnSendFrame() { return OnSendFrame; }
 	FOnForceStopRecord& GetOnForceStopRecord() { return OnForceStopRecord; }
 
+	bool Initialize(const FIntPoint &InResolution, const FIntRect &InCropArea, const double InFrameRate)
+	{
+		if (InCropArea.Size() != InResolution)
+		{
+			UE_LOG(LogRecorder, Error, TEXT("VideoCapture Resolution(%s) must equal to cropped area(%s)"),
+				   *InResolution.ToString(), *InCropArea.Size().ToString())
+			return false;
+		}
+		bInitialized = true;
+		Resolution = InResolution;
+		CropArea = InCropArea;
+		VideoTickTime = 1.0 / FMath::Max(1.0, InFrameRate);
+		TimeManager.Initialize(VideoTickTime);
+		return true;
+	}
+private:
+	bool bInitialized = false;
+	bool bUseFixedTimeStep = false;
+
+	//~begin 配置
+	/** 帧时长 */
+	float VideoTickTime;
+	/** 目标分辨率 */
+	FIntPoint Resolution;
+	/** 截取区域 */
+	FIntRect CropArea;
+	//~end 配置
 private:
 	/**
 	 * Copy the specified texture to an internal buffer.
@@ -146,15 +176,14 @@ private:
 
 	void OnBackBufferReady_RenderThread(SWindow& SlateWindow, const FTexture2DRHIRef& BackBuffer);
 
-	// void AddEndFunction();
 	/** 注意，只在因为错误强行停止时能调用 */
 	void StopRecord();
 	void EndWindowReader(const bool i);
 	void EndWindowReader_StandardGame(void* i);
 
+	/** 强制停止时，外部可能需要专门处理 */
 	FOnForceStopRecord OnForceStopRecord;
-
-	FCriticalSection VideoCS;
+	/** 发送帧 */
 	FOnSendFrame OnSendFrame;
 public:
 	// 配置
@@ -169,8 +198,7 @@ private:
 	// FEncoderThread* Runnable;
 	// TSharedPtr<FFFmpegAVEncoder> AVEncoder;
 	std::atomic_bool bRecording{false};
-	FCriticalSection RenderThreadOK;
-	// FCriticalSection AudioThreadOK;
+	FCriticalSection VideoCaptureCS;
 
 	// 读取 Buffer，这里设为 1 是因为暂时没有设计适应多个 ReadBack 缓存的解析逻辑，后续可以加
 	static constexpr int32 READBACK_BUFFER_COUNT = 3;
@@ -178,7 +206,6 @@ private:
 	int32 CurrentReadbackIndex = 0;
 
 	// 设备相关的
-	// FAudioDevice* AudioDevice;
 	SWindow* GameWindow;
 
 	// 不能再次引用 BackBuffer，否则 Resize 时会因为引用检查而崩溃
