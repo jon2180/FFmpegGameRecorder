@@ -133,7 +133,6 @@ public:
 		Resolution = InResolution;
 		CropArea = InCropArea;
 		VideoTickTime = 1.0 / FMath::Max(1.0, InFrameRate);
-		TimeManager.Initialize(VideoTickTime);
 		return true;
 	}
 private:
@@ -186,17 +185,6 @@ private:
 	/** 发送帧 */
 	FOnSendFrame OnSendFrame;
 public:
-	// 配置
-	FRecorderConfig RecordConfig;
-private:
-	bool bUseFixedTimeStep = false;
-
-	// 调试
-	// std::atomic_bool bPendingCaptureNextFrame{false};
-
-	// 运行时需求
-	// FEncoderThread* Runnable;
-	// TSharedPtr<FFFmpegAVEncoder> AVEncoder;
 	std::atomic_bool bRecording{false};
 	FCriticalSection VideoCaptureCS;
 
@@ -208,11 +196,6 @@ private:
 	// 设备相关的
 	SWindow* GameWindow;
 
-	// 不能再次引用 BackBuffer，否则 Resize 时会因为引用检查而崩溃
-	// FTexture2DRHIRef GameTexture;
-
-	// TEnumAsByte<EWorldType::Type> GameMode;
-
 	// 视频
 
 	/** 录制开始的时间点（全局时间） */
@@ -223,6 +206,4 @@ private:
 	double RenderCurrentTimeCatch = 0;
 	/** 录制的前一帧的时间点 */
 	float PrevFrameTimeOffset = 0;
-	/** 每帧时长，避免帧率超出限制 */
-	float VideoTickTime;
 };
