@@ -232,7 +232,6 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 		}
 
 		uint8* TextureData;
-		// int32 RowCount;
 		FIntPoint Resolution;
 		{
 			FScopeLogTime timecr(TEXT("Lock/Unlock"));
@@ -243,14 +242,6 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 
 		UE_LOG(LogRecorder, Verbose,
 		       TEXT("SourceResolution: (Width=%d, Height=%d) RecordArea: %s"), w, h, *RecordArea.ToString())
-
-		// if (bPendingCaptureNextFrame.load())
-		// {
-		//     const FString& Filename = *(FPaths::ProjectSavedDir() / FString::Printf(TEXT("FrameGrabber_frame_%d.bmp"), 5));
-		//     FColor* OutFrameTemp = (FColor*) TextureData;
-		//     FFileHelper::CreateBitmap(*Filename, w, h, OutFrameTemp);
-		//     bPendingCaptureNextFrame.store(false);
-		// }
 
 		// 强制截取的视频帧包含的画面宽高有效，主要针对 Resize 场景做安全保证
 		auto ClippedRect = RecordArea;
@@ -287,15 +278,6 @@ bool FVideoCapture::CopyTextureToQueue_LockTextureToCpu(const FTexture2DRHIRef& 
 		}
 	}
 
-	// if (bPendingCaptureNextFrame.load())
-	// {
-	//     const FString& Filename = *(FPaths::ProjectSavedDir() / FString::Printf(
-	//                                     TEXT("FrameGrabber_frame_%d.bmp"), 5));
-	//     FColor* OutFrameTemp = (FColor*) TextureData;
-	//     FFileHelper::CreateBitmap(*Filename, w, h, OutFrameTemp);
-	//     bPendingCaptureNextFrame.store(false);
-	// }
-
 	bool Rst = false;
 	// 强制截取的视频帧包含的画面宽高有效，主要针对 Resize 场景做安全保证
 	auto ClippedRect = RecordArea;
@@ -329,94 +311,24 @@ void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const F
 	}
 	ensure(IsInRenderingThread());
 
-	// 高帧率下限帧，低帧率下跳过
-	if (!bUseFixedTimeStep)
+	double CurrentGameTime = FApp::GetCurrentTime();
+	if (TimeManager.ShouldProcessThisFrame(CurrentGameTime))
 	{
-		const float ConsumedTime = VideoTickTime;
-		PrevFrameTimeOffset += FApp::GetDeltaTime();
-		if (PrevFrameTimeOffset < ConsumedTime)
+		double Ct = TimeManager.GetNextOutputTimestamp();
+
+		bool RecordRst;
+		if (CVarRecordFrameRemapEnabled->GetBool())
 		{
-			// UE_LOG(LogRecorder, Warning, TEXT("ticktime %f < Video_Tick_Time %f "), ticktime, Video_Tick_Time)
-			return;
+			RecordRst = CopyTextureToQueue_GpuReadToCpu(BackBuffer, Ct, FApp::GetDeltaTime(), CropArea);
 		}
-		PrevFrameTimeOffset -= ConsumedTime;
-	}
-
-	// 不能再次引用 BackBuffer，否则 Resize 时会因为引用检查而崩溃
-	// GameTexture = BackBuffer;
-	// int w = BackBuffer->GetTexture2D()->GetSizeX();
-	// int h = BackBuffer->GetTexture2D()->GetSizeY();
-
-	// // 当前时间
-	// double CurrentFrameTime = 0.0;
-	// // 上一帧的 delta time，不是系统提供，而是通过两次进入此方法计算出来的
-	// // fixme: 正确的时间处理，这里应该是下一帧的时间节点
-	// double PreviousDeltaTime = 0.0;
-	// {
-	//     double CurrTimeFromGameStart = FApp::GetCurrentTime();
-	//     // 避免重入
-	//     if (RenderCurrentTimeCatch == CurrTimeFromGameStart)
-	//     {
-	//         UE_LOG(LogRecorder, Warning, TEXT("RenderCurrentTimeCatch == CurrTime，should not re-entry"))
-	//         return;
-	//     }
-	//     // 仅初始化
-	//     if (RecordStartVideoTimeClock <= 0)
-	//     {
-	//         RecordStartVideoTimeClock = CurrTimeFromGameStart;
-	//         LastFrameVideoTimeClock = CurrTimeFromGameStart;
-	//         CurrentFrameTime = 0;
-	//         PreviousDeltaTime = FApp::GetDeltaTime();
-	//     }
-	//     else
-	//     {
-	//         CurrentFrameTime = CurrTimeFromGameStart - RecordStartVideoTimeClock;
-	//         if (LastFrameVideoTimeClock > RecordStartVideoTimeClock)
-	//         {
-	//             PreviousDeltaTime = CurrTimeFromGameStart - LastFrameVideoTimeClock;
-	//         }
-	//         else
-	//         {
-	//             PreviousDeltaTime = FApp::GetDeltaTime();
-	//         }
-	//         LastFrameVideoTimeClock = CurrTimeFromGameStart;
-	//     }
-	// }
-	double CurrTime = FApp::GetCurrentTime();
-	// 仅初始化
-	if (RecordStartVideoTimeClock <= 0)
-	{
-		RecordStartVideoTimeClock = CurrTime;
-	}
-
-	// 防重入
-	if (RenderCurrentTimeCatch == CurrTime)
-	{
-		return;
-	}
-
-	double Ct = CurrTime - RecordStartVideoTimeClock;
-
-	bool RecordRst;
-	if (CVarRecordFrameRemapEnabled->GetBool())
-	{
-		RecordRst = CopyTextureToQueue_GpuReadToCpu(
-			BackBuffer,
-			Ct,
-			FApp::GetDeltaTime(),
-			CropArea);
-	}
-	else
-	{
-		RecordRst = CopyTextureToQueue_LockTextureToCpu(
-			BackBuffer,
-			Ct,
-			FApp::GetDeltaTime(),
-			CropArea);
-	}
-	if (RecordRst)
-	{
-		RenderCurrentTimeCatch = CurrTime;
+		else
+		{
+			RecordRst = CopyTextureToQueue_LockTextureToCpu(BackBuffer, Ct, FApp::GetDeltaTime(), CropArea);
+		}
+		if (!RecordRst)
+		{
+			UE_LOG(LogRecorder, Error, TEXT("failed to send frame"))
+		}
 	}
 }
 

@@ -100,6 +100,70 @@ namespace recorder
 	};
 }
 
+class FScreenCaptureTimeManager
+{
+public:
+	void Initialize(double InOutputFrameRate);
+    
+	// 返回是否需要处理当前输入帧
+	bool ShouldProcessThisFrame(double InInputTime);
+    
+	// 获取下一个输出帧的时间戳
+	double GetNextOutputTimestamp() const;
+    
+private:
+	/** 时间间隔 */
+	double OutputFrameInterval = 0.0;
+
+	/** 上一帧的输出时间 */
+	double LastOutputTimestamp = 0.0;
+	/** 时间累加器，用于判断两帧之间的时间间隔 */
+	double InputTimeAccumulator = 0.0;
+
+	/** 录制开始的时间点（全局时间） */
+	double RecordStartVideoTimeClock{0.0};
+};
+
+void FScreenCaptureTimeManager::Initialize(double InOutputFrameRate)
+{
+	OutputFrameInterval = InOutputFrameRate;
+	LastOutputTimestamp = 0.0;
+	InputTimeAccumulator = 0.0;
+}
+
+bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
+{
+	// 仅初始化
+	if (RecordStartVideoTimeClock <= 0)
+	{
+		RecordStartVideoTimeClock = InInputTime;
+		LastOutputTimestamp = 0.0;
+		InputTimeAccumulator = 0.0;
+		return true;
+	}
+	// 时基累积算法
+	InputTimeAccumulator += (InInputTime - RecordStartVideoTimeClock) - LastOutputTimestamp;
+
+	// 累加器判定
+	constexpr double TIME_SPAN_TOLERANCE = 0.10;
+	constexpr double DeltaTolerance = 1 - TIME_SPAN_TOLERANCE;
+	if (InputTimeAccumulator < OutputFrameInterval * DeltaTolerance)
+	{
+		return false;
+	}
+	InputTimeAccumulator -= OutputFrameInterval;
+
+	LastOutputTimestamp += OutputFrameInterval;
+	UE_LOG(LogRecorder, Display, TEXT("Time: RawTime=%lf, Current=%lf, Accumulator==%lf"),
+		InInputTime, LastOutputTimestamp, InputTimeAccumulator);
+	return true;
+}
+
+double FScreenCaptureTimeManager::GetNextOutputTimestamp() const
+{
+	return LastOutputTimestamp;
+}
+
 DECLARE_DELEGATE_SevenParams(FOnSendFrame,
                              uint8* FrameData, EPixelFormat PixelFormat, uint16 FrameWidth, uint16 FrameHeight,
                              FIntRect CaptureRect, double PresentTime, double Duration);
@@ -133,6 +197,7 @@ public:
 		Resolution = InResolution;
 		CropArea = InCropArea;
 		VideoTickTime = 1.0 / FMath::Max(1.0, InFrameRate);
+		TimeManager.Initialize(VideoTickTime);
 		return true;
 	}
 private:
@@ -184,7 +249,7 @@ private:
 	FOnForceStopRecord OnForceStopRecord;
 	/** 发送帧 */
 	FOnSendFrame OnSendFrame;
-public:
+
 	std::atomic_bool bRecording{false};
 	FCriticalSection VideoCaptureCS;
 
@@ -197,13 +262,5 @@ public:
 	SWindow* GameWindow;
 
 	// 视频
-
-	/** 录制开始的时间点（全局时间） */
-	double RecordStartVideoTimeClock{0.0};
-	/** 上一帧进入的时间点（全局时间） */
-	double LastFrameVideoTimeClock{0.0};
-	/** 录制的最新一帧的时间点 */
-	double RenderCurrentTimeCatch = 0;
-	/** 录制的前一帧的时间点 */
-	float PrevFrameTimeOffset = 0;
+	FScreenCaptureTimeManager TimeManager;
 };
