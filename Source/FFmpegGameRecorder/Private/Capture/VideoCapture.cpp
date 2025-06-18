@@ -33,6 +33,7 @@ bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
 	// 当前帧到达时间已经大于预设帧率的间隔时间，直接判定为接收
 	if (LastOutputTimestamp + ExpectedOutputFrameInterval <= CurrentTimestamp)
 	{
+		// TODO 这里的代码会重置时间戳，这会导致输出视频的帧率不合预期，需要重置
 		InputTimeAccumulator = 0;
 		OutputFrameInterval = CurrentTimestamp - LastOutputTimestamp;
 		LastOutputTimestamp = CurrentTimestamp;
