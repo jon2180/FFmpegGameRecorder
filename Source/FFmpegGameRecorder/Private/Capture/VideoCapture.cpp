@@ -1,5 +1,6 @@
 ﻿#include "Capture/VideoCapture.h"
 
+#include "RecorderConfig.h"
 #include "RHI.h"
 #include "RHICommandList.h"
 #include "RHIResources.h"
@@ -8,127 +9,57 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Stats/StatsMisc.h"
 
-namespace recorder
+void FScreenCaptureTimeManager::Initialize(double InOutputFrameRate)
 {
-	FRHIGPUTextureReadback::FRHIGPUTextureReadback(FName RequestName, FIntPoint Resolution): Resolution(Resolution)
-		, CapturedTime(0)
-		, CapturedDuration(0)
-		, CaptureStatus(ECaptureStatus::Idle)
+	OutputFrameInterval = InOutputFrameRate;
+	ExpectedOutputFrameInterval = InOutputFrameRate;
+	LastOutputTimestamp = 0.0;
+	InputTimeAccumulator = 0.0;
+}
+
+bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
+{
+	// 仅初始化
+	if (RecordStartVideoTimeClock <= 0)
 	{
-		Fence = RHICreateGPUFence(RequestName);
+		RecordStartVideoTimeClock = InInputTime;
+		LastOutputTimestamp = 0.0;
+		InputTimeAccumulator = 0.0;
+		return true;
 	}
 
-	FRHIGPUTextureReadback::~FRHIGPUTextureReadback()
+	// 当前时间
+	const double CurrentTimestamp = (InInputTime - RecordStartVideoTimeClock);
+	// 当前帧到达时间已经大于预设帧率的间隔时间，直接判定为接收
+	if (LastOutputTimestamp + ExpectedOutputFrameInterval <= CurrentTimestamp)
 	{
-		if (DestinationStagingTexture)
+		InputTimeAccumulator = 0;
+		OutputFrameInterval = CurrentTimestamp - LastOutputTimestamp;
+		LastOutputTimestamp = CurrentTimestamp;
+		return true;
+	}
+	else
+	{
+		// 强制重置帧时长
 		{
-			DestinationStagingTexture.SafeRelease();
+			OutputFrameInterval = ExpectedOutputFrameInterval;
 		}
-	}
+		// 时基累积算法
+		InputTimeAccumulator += CurrentTimestamp - LastOutputTimestamp;
 
-	void FRHIGPUTextureReadback::EnqueueCopyRDG(FRHICommandList& RHICmdList, FRHITexture* SourceTexture,
-	                                            FResolveRect Rect)
-	{
-		// SourceTexture is already in CopySrc state (handled by RDG)
-		EnqueueCopyInternal(RHICmdList, SourceTexture, FResolveParams(Rect));
-	}
-
-	void FRHIGPUTextureReadback::EnqueueCopy(FRHICommandList& RHICmdList, FRHITexture* SourceTexture, FResolveRect Rect)
-	{
-		// In the non-RDG version, we don't know what state the source texture will already be in, so transition it to CopySrc.
-		RHICmdList.Transition(FRHITransitionInfo(SourceTexture, ERHIAccess::Unknown, ERHIAccess::CopySrc));
-		EnqueueCopyInternal(RHICmdList, SourceTexture, FResolveParams(Rect));
-	}
-
-	void FRHIGPUTextureReadback::EnqueueCopyInternal(FRHICommandList& RHICmdList, FRHITexture* SourceTexture,
-	                                                 FResolveParams ResolveParams)
-	{
-		Fence->Clear();
-
-		if (SourceTexture)
+		// 累加器判定
+		constexpr double TIME_SPAN_TOLERANCE = 0.10;
+		constexpr double DeltaTolerance = 1 - TIME_SPAN_TOLERANCE;
+		if (InputTimeAccumulator < OutputFrameInterval * DeltaTolerance)
 		{
-			// We only support 2d textures for now.
-			ensure(SourceTexture->GetTexture2D());
-
-			// Assume for now that every enqueue happens on a texture of the same format and size (when reused).
-			if (!DestinationStagingTexture)
-			{
-				FIntVector TextureSize;
-				// if (ResolveParams.Rect.IsValid())
-				// {
-				//     FIntPoint SourceTexture2D(SourceTexture->GetSizeXYZ().X, SourceTexture->GetSizeXYZ().Y);
-				//     FIntPoint TargetRect(ResolveParams.Rect.X2 - ResolveParams.Rect.X1, ResolveParams.Rect.Y2 - ResolveParams.Rect.Y1);
-				//     FIntPoint RstRect = SourceTexture2D.ComponentMin(TargetRect);
-				//     TextureSize = FIntVector(RstRect.X, RstRect.Y, 0);
-				// }
-				// else
-				// {
-				TextureSize = SourceTexture->GetSizeXYZ();
-				// }
-
-				FString FenceName = Fence->GetFName().ToString();
-				FRHIResourceCreateInfo CreateInfo(*FenceName);
-				DestinationStagingTexture = RHICreateTexture2D(TextureSize.X, TextureSize.Y, SourceTexture->GetFormat(),
-				                                               1, 1,
-				                                               TexCreate_CPUReadback | TexCreate_HideInVisualizeTexture,
-				                                               CreateInfo);
-			}
-
-			// We need the destination texture to be writable from a copy operation
-			RHICmdList.Transition(FRHITransitionInfo(DestinationStagingTexture, ERHIAccess::Unknown,
-			                                         ERHIAccess::CopyDest));
-
-			// Ensure this copy call does not perform any transitions. We're handling them manually.
-			ResolveParams.SourceAccessFinal = ERHIAccess::Unknown;
-			ResolveParams.DestAccessFinal = ERHIAccess::Unknown;
-
-			// Transfer memory GPU -> CPU
-			RHICmdList.CopyToResolveTarget(SourceTexture, DestinationStagingTexture, ResolveParams);
-
-			// Transition the dest to CPURead *before* signaling the fence, otherwise ordering is not guaranteed.
-			RHICmdList.Transition(FRHITransitionInfo(DestinationStagingTexture, ERHIAccess::CopyDest,
-			                                         ERHIAccess::CPURead));
-			RHICmdList.WriteGPUFence(Fence);
-
-			LastCopyGPUMask = RHICmdList.GetGPUMask();
-
-			// --------------- start custom
-			CaptureStatus = ECaptureStatus::Capturing;
-			// --------------- end custom
+			return false;
 		}
+		InputTimeAccumulator -= OutputFrameInterval;
+
+		LastOutputTimestamp += OutputFrameInterval;
+		return true;
 	}
-
-	void FRHIGPUTextureReadback::LockTexture(FRHICommandListImmediate& RHICmdList, void*& OutBufferPtr,
-	                                         FIntPoint& OutRowPitchInPixels)
-	{
-		if (DestinationStagingTexture)
-		{
-			void* ResultsBuffer = nullptr;
-			RHICmdList.MapStagingSurface(DestinationStagingTexture, Fence.GetReference(), ResultsBuffer,
-			                             OutRowPitchInPixels.X, OutRowPitchInPixels.Y);
-			OutBufferPtr = ResultsBuffer;
-			CaptureStatus = ECaptureStatus::Captured;
-		}
-		else
-		{
-			OutBufferPtr = nullptr;
-			OutRowPitchInPixels = 0;
-		}
-	}
-
-	void FRHIGPUTextureReadback::Unlock()
-	{
-		ensure(DestinationStagingTexture);
-
-		FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
-		RHICmdList.UnmapStagingSurface(DestinationStagingTexture);
-
-		CaptureStatus = ECaptureStatus::Idle;
-		CapturedTime = 0;
-		CapturedDuration = 0;
-	}
-};
-
+}
 
 FVideoCapture::FVideoCapture(): VideoTickTime(0), GameWindow(nullptr)
 {
@@ -234,7 +165,7 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 		uint8* TextureData;
 		FIntPoint Resolution;
 		{
-			FScopeLogTime timecr(TEXT("Lock/Unlock"));
+			// FScopeLogTime timecr(TEXT("Lock/Unlock"));
 			void* VoidTextureData = nullptr;
 			PreviousGpuReadback->LockTexture(RHICmdList, VoidTextureData, Resolution);
 			TextureData = static_cast<uint8*>(VoidTextureData);
@@ -314,16 +245,16 @@ void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const F
 	double CurrentGameTime = FApp::GetCurrentTime();
 	if (TimeManager.ShouldProcessThisFrame(CurrentGameTime))
 	{
-		double Ct = TimeManager.GetNextOutputTimestamp();
-
 		bool RecordRst;
 		if (CVarRecordFrameRemapEnabled->GetBool())
 		{
-			RecordRst = CopyTextureToQueue_GpuReadToCpu(BackBuffer, Ct, FApp::GetDeltaTime(), CropArea);
+			RecordRst = CopyTextureToQueue_GpuReadToCpu(
+				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetNextOutputDuration(), CropArea);
 		}
 		else
 		{
-			RecordRst = CopyTextureToQueue_LockTextureToCpu(BackBuffer, Ct, FApp::GetDeltaTime(), CropArea);
+			RecordRst = CopyTextureToQueue_LockTextureToCpu(
+				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetNextOutputDuration(), CropArea);
 		}
 		if (!RecordRst)
 		{

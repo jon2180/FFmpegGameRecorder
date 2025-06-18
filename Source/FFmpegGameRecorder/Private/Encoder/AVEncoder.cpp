@@ -1,5 +1,6 @@
 ﻿#include "Encoder/AVEncoder.h"
 
+#include "App.h"
 #include "RHISurfaceDataConversion.h"
 #include "StatsMisc.h"
 
@@ -873,8 +874,10 @@ void FAVBufferedEncoder::EnqueueVideoFrame_RenderThread(uint8* FrameData, EPixel
                                                         uint16 FrameWidth, uint16 FrameHeight, FIntRect CaptureRect,
                                                         double PresentTime, double Duration)
 {
-	FScopeLogTime timerin(TEXT("InsertVideoToEnqueue"));
-	UE_LOG(LogRecorder, Display, TEXT("CaptureVideoFrameReadyToSend"));
+	// UE_LOG(LogRecorder, Display, TEXT("Time: RawTime=%lf, Current=%lf, Accumulator==%lf"),
+	// 	FApp::GetCurrentTime(), PresentTime, Duration);
+	// FScopeLogTime timerin(TEXT("InsertVideoToEnqueue"));
+	// UE_LOG(LogRecorder, Display, TEXT("CaptureVideoFrameReadyToSend"));
 	FEncodeData* NewData = nullptr;
 	if (VideoBufferPool.IsEmpty())
 	{
@@ -981,8 +984,8 @@ void FAVBufferedEncoder::EnqueueAudioFrame_AudioThread(float* AudioData, int Num
                                                        int32 SampleRate, double AudioClock, double PresentTime,
                                                        double Duration)
 {
-	FScopeLogTime timerin(TEXT("InsertAudioToEnqueue"));
-	UE_LOG(LogRecorder, Display, TEXT("CaptureAudioFrameReadyToSend"));
+	// FScopeLogTime timerin(TEXT("InsertAudioToEnqueue"));
+	// UE_LOG(LogRecorder, Display, TEXT("CaptureAudioFrameReadyToSend"));
 
 	FEncodeData* NewData = nullptr;
 	if (AudioBufferPool.IsEmpty())

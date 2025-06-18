@@ -1,105 +1,13 @@
 ﻿#pragma once
 
 #include "AVRecorderBase.h"
-#include "MultiGPU.h"
-#include "RecorderConfig.h"
+#include "PixelFormat.h"
+#include "RHITextureReadback.h"
 
-#if 0
-#include "RHIFwd.h"
-#endif
-
-#include "RHIResources.h"
-#include "Widgets/SWindow.h"
-
-struct FResolveParams;
-struct FResolveRect;
-class FRHITexture;
-
-namespace recorder
-{
-	/** Texture readback implementation. */
-	class FRHIGPUTextureReadback
-	{
-	public:
-		enum class ECaptureStatus : int8
-		{
-			Idle, Capturing, Captured, Encoding
-		};
-
-		FRHIGPUTextureReadback(FName RequestName, FIntPoint Resolution);
-		~FRHIGPUTextureReadback();
-
-		/** Indicates if the data is in place and ready to be read. */
-		FORCEINLINE bool IsReady() const
-		{
-			return !Fence || (Fence->NumPendingWriteCommands.GetValue() == 0 && Fence->Poll());
-		}
-
-		/** Indicates if the data is in place and ready to be read on a subset of GPUs. */
-		FORCEINLINE bool IsReady(FRHIGPUMask GPUMask) const
-		{
-			return !Fence || Fence->Poll(GPUMask);
-		}
-
-		void PreEnqueue(double InCapturedTime, double InCapturedDuration)
-		{
-			CapturedTime = InCapturedTime;
-			CapturedDuration = InCapturedDuration;
-		}
-
-		void EnqueueCopyRDG(FRHICommandList& RHICmdList, FRHITexture* SourceTexture, FResolveRect Rect);
-		void EnqueueCopy(FRHICommandList& RHICmdList, FRHITexture* SourceTexture, FResolveRect Rect);
-
-		// void* Lock(uint32 NumBytes);
-		void LockTexture(FRHICommandListImmediate& RHICmdList, void*& OutBufferPtr, FIntPoint& OutRowPitchInPixels);
-
-		/**
-		 * Signals that the host is finished reading from the backing buffer.
-		 */
-		void Unlock();
-
-		FORCEINLINE ECaptureStatus GetCaptureStatus() const
-		{
-			return CaptureStatus;
-		}
-
-		FORCEINLINE const FRHIGPUMask& GetLastCopyGPUMask() const
-		{
-			return LastCopyGPUMask;
-		}
-
-	protected:
-		FGPUFenceRHIRef Fence;
-		FRHIGPUMask LastCopyGPUMask;
-
-		/**
-		 * 分辨率
-		 */
-		FIntPoint Resolution;
-
-	public:
-		/**
-		 * 帧出现时间
-		 */
-		double CapturedTime;
-		/**
-		 * 帧展示时长
-		 */
-		double CapturedDuration;
-
-	protected:
-		/**
-		 * 状态
-		 */
-		ECaptureStatus CaptureStatus;
-
-	private:
-		void EnqueueCopyInternal(FRHICommandList& RHICmdList, FRHITexture* SourceTexture, FResolveParams Params);
-
-		FTextureRHIRef DestinationStagingTexture;
-	};
-}
-
+/**
+ * 控制时间捕获的输出帧率，输出的帧率范围为 Min(游戏实际帧率，预设帧率)，
+ * 比如游戏 FPS 为 30，预期 60，输出的帧率应该为 30
+ */
 class FScreenCaptureTimeManager
 {
 public:
@@ -107,9 +15,11 @@ public:
     
 	// 返回是否需要处理当前输入帧
 	bool ShouldProcessThisFrame(double InInputTime);
-    
+
 	// 获取下一个输出帧的时间戳
-	double GetNextOutputTimestamp() const;
+	FORCEINLINE_DEBUGGABLE double GetNextOutputTimestamp() const { return LastOutputTimestamp; }
+
+	FORCEINLINE_DEBUGGABLE double GetNextOutputDuration() const { return OutputFrameInterval; }
     
 private:
 	/** 时间间隔 */
@@ -122,47 +32,10 @@ private:
 
 	/** 录制开始的时间点（全局时间） */
 	double RecordStartVideoTimeClock{0.0};
+
+	/** 预期的输出视频的帧时长 */
+	double ExpectedOutputFrameInterval{0.0};
 };
-
-void FScreenCaptureTimeManager::Initialize(double InOutputFrameRate)
-{
-	OutputFrameInterval = InOutputFrameRate;
-	LastOutputTimestamp = 0.0;
-	InputTimeAccumulator = 0.0;
-}
-
-bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
-{
-	// 仅初始化
-	if (RecordStartVideoTimeClock <= 0)
-	{
-		RecordStartVideoTimeClock = InInputTime;
-		LastOutputTimestamp = 0.0;
-		InputTimeAccumulator = 0.0;
-		return true;
-	}
-	// 时基累积算法
-	InputTimeAccumulator += (InInputTime - RecordStartVideoTimeClock) - LastOutputTimestamp;
-
-	// 累加器判定
-	constexpr double TIME_SPAN_TOLERANCE = 0.10;
-	constexpr double DeltaTolerance = 1 - TIME_SPAN_TOLERANCE;
-	if (InputTimeAccumulator < OutputFrameInterval * DeltaTolerance)
-	{
-		return false;
-	}
-	InputTimeAccumulator -= OutputFrameInterval;
-
-	LastOutputTimestamp += OutputFrameInterval;
-	UE_LOG(LogRecorder, Display, TEXT("Time: RawTime=%lf, Current=%lf, Accumulator==%lf"),
-		InInputTime, LastOutputTimestamp, InputTimeAccumulator);
-	return true;
-}
-
-double FScreenCaptureTimeManager::GetNextOutputTimestamp() const
-{
-	return LastOutputTimestamp;
-}
 
 DECLARE_DELEGATE_SevenParams(FOnSendFrame,
                              uint8* FrameData, EPixelFormat PixelFormat, uint16 FrameWidth, uint16 FrameHeight,

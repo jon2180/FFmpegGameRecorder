@@ -106,7 +106,7 @@ constexpr int32 DefaultOutputSampleRate = 48000;
 static int32 UserAndroidAbsolutePath = 1;
 static bool bUseFixedTimeStepRecording = false;
 static float PreviousFixedDeltaTime = 0;
-static float VideoFrameRate = 24.f;
+static float VideoFrameRate = 60.f;
 
 static FAutoConsoleVariableRef CVarUserAndroidAbsolutePath(
 	TEXT("MW.UserAndroidAbsolutePath"), UserAndroidAbsolutePath, TEXT("Use android absolutepath"), ECVF_Default);
