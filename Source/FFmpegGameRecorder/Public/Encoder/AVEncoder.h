@@ -142,9 +142,7 @@ private:
 	void FinalizeAudioFrames_EncoderThread();
 
 public:
-	void EnqueueVideoFrame_RenderThread(uint8* FrameData, EPixelFormat PixelFormat, uint16 FrameWidth,
-	                                    uint16 FrameHeight,
-	                                    FIntRect CaptureRect, double PresentTime, double Duration);
+	void EnqueueVideoFrame_RenderThread(FCapturedVideoFrame VideoFrame);
 	void EnqueueAudioFrame_AudioThread(float* AudioData, int NumSamples, int32 NumChannels,
 	                                   int32 SampleRate, double AudioClock, double PresentTime, double Duration);
 

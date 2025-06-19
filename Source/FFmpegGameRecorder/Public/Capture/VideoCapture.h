@@ -2,6 +2,7 @@
 
 #include "AVRecorderBase.h"
 #include "PixelFormat.h"
+#include "RecorderConfig.h"
 #include "RHITextureReadback.h"
 
 /**
@@ -19,8 +20,10 @@ public:
 	// 获取下一个输出帧的时间戳
 	FORCEINLINE_DEBUGGABLE double GetNextOutputTimestamp() const { return LastOutputTimestamp; }
 
-	FORCEINLINE_DEBUGGABLE double GetNextOutputDuration() const { return OutputFrameInterval; }
-    
+	// 获取当前输出帧的帧时长
+	FORCEINLINE_DEBUGGABLE double GetOutputDuration() const { return OutputFrameInterval; }
+
+	FString ToString() const;
 private:
 	/** 时间间隔 */
 	double OutputFrameInterval = 0.0;
@@ -37,9 +40,7 @@ private:
 	double ExpectedOutputFrameInterval{0.0};
 };
 
-DECLARE_DELEGATE_SevenParams(FOnSendFrame,
-                             uint8* FrameData, EPixelFormat PixelFormat, uint16 FrameWidth, uint16 FrameHeight,
-                             FIntRect CaptureRect, double PresentTime, double Duration);
+DECLARE_DELEGATE_OneParam(FOnSendFrame, FCapturedVideoFrame VideoFrame);
 DECLARE_DELEGATE(FOnForceStopRecord);
 
 /**

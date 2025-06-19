@@ -8,6 +8,7 @@ public class FFmpegGameRecorder : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         PrivatePCHHeaderFile = "Private/FFmpegGameRecorderPCH.h";
+        CppStandard = CppStandardVersion.Latest;
 
 		PublicIncludePaths.AddRange(
 			new string[] {

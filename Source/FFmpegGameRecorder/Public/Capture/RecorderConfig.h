@@ -47,6 +47,19 @@ struct FRecorderConfig
 	}
 };
 
+struct FCapturedVideoFrame
+{
+	uint8* FrameData;
+	EPixelFormat PixelFormat;
+	uint16 FrameWidth;
+	uint16 FrameHeight;
+	FIntRect CaptureRect;
+	double PresentTime;
+	double Duration;
+
+	FORCEINLINE_DEBUGGABLE explicit operator bool() const { return FrameData != nullptr; }
+}; 
+
 class FEncodeData
 {
 public:

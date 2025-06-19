@@ -37,6 +37,7 @@ bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
 		InputTimeAccumulator = 0;
 		OutputFrameInterval = CurrentTimestamp - LastOutputTimestamp;
 		LastOutputTimestamp = CurrentTimestamp;
+		UE_LOG(LogRecorder, Display, TEXT("ShouldProcessThisFrame: %s"), *ToString())
 		return true;
 	}
 	else
@@ -62,6 +63,14 @@ bool FScreenCaptureTimeManager::ShouldProcessThisFrame(double InInputTime)
 	}
 }
 
+FString FScreenCaptureTimeManager::ToString() const
+{
+	return FString::Printf(TEXT(
+		"{ExpectedOutputFrameInterval=%lf, RecordStartVideoTimeClock=%lf, OutputFrameInterval=%lf, LastOutputTimestamp=%lf, InputTimeAccumulator=%lf}"),
+	                       ExpectedOutputFrameInterval, RecordStartVideoTimeClock, OutputFrameInterval,
+	                       LastOutputTimestamp, InputTimeAccumulator);
+}
+
 FVideoCapture::FVideoCapture(): VideoTickTime(0), GameWindow(nullptr)
 {
 }
@@ -75,9 +84,9 @@ void FVideoCapture::Register(UWorld* World)
 	if (!bInitialized)
 	{
 		UE_LOG(LogRecorder, Error, TEXT("FVideoCapture::Register: cant register before initialization"));
-		return;	
+		return;
 	}
-	
+
 	FSlateApplication::Get().GetRenderer()->OnBackBufferReadyToPresent().AddRaw(
 		this, &FVideoCapture::OnBackBufferReady_RenderThread);
 	// 使用 PreResize，而不是 PostResize，为了保证截取的部分是有效的
@@ -179,9 +188,15 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 		auto ClippedRect = RecordArea;
 		ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
 		{
-			Rst = GetOnSendFrame().ExecuteIfBound(
-				TextureData, BackBuffer->GetFormat(), Resolution.X, h, ClippedRect,
-				PreviousGpuReadback->CapturedTime, PreviousGpuReadback->CapturedDuration);
+			Rst = GetOnSendFrame().ExecuteIfBound(FCapturedVideoFrame{
+				.FrameData =  TextureData,
+				.PixelFormat = BackBuffer->GetFormat(),
+				.FrameWidth = static_cast<uint16>(Resolution.X),
+				.FrameHeight = static_cast<uint16>(h),
+				.CaptureRect = ClippedRect,
+				.PresentTime = PreviousGpuReadback->CapturedTime,
+				.Duration = PreviousGpuReadback->CapturedDuration
+			});
 		}
 		PreviousGpuReadback->Unlock();
 	}
@@ -215,9 +230,15 @@ bool FVideoCapture::CopyTextureToQueue_LockTextureToCpu(const FTexture2DRHIRef& 
 	auto ClippedRect = RecordArea;
 	ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
 	{
-		Rst = GetOnSendFrame().ExecuteIfBound(
-			TextureData, BackBuffer->GetFormat(), Resolution.X, h, ClippedRect,
-			CaptureTsInSeconds, DurationInSeconds);
+		Rst = GetOnSendFrame().ExecuteIfBound(FCapturedVideoFrame{
+			.FrameData = TextureData,
+			.PixelFormat = BackBuffer->GetFormat(),
+			.FrameWidth = static_cast<uint16>(Resolution.X),
+			.FrameHeight = static_cast<uint16>(h),
+			.CaptureRect = ClippedRect,
+			.PresentTime = CaptureTsInSeconds,
+			.Duration = DurationInSeconds
+		});
 	}
 	list.UnlockTexture2D(BackBuffer, 0, false);
 	return Rst;
@@ -250,12 +271,12 @@ void FVideoCapture::OnBackBufferReady_RenderThread(SWindow& SlateWindow, const F
 		if (CVarRecordFrameRemapEnabled->GetBool())
 		{
 			RecordRst = CopyTextureToQueue_GpuReadToCpu(
-				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetNextOutputDuration(), CropArea);
+				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetOutputDuration(), CropArea);
 		}
 		else
 		{
 			RecordRst = CopyTextureToQueue_LockTextureToCpu(
-				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetNextOutputDuration(), CropArea);
+				BackBuffer, TimeManager.GetNextOutputTimestamp(), TimeManager.GetOutputDuration(), CropArea);
 		}
 		if (!RecordRst)
 		{

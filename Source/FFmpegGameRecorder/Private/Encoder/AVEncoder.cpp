@@ -870,14 +870,21 @@ void FAVBufferedEncoder::FinalizeAudioFrames_EncoderThread()
 	Encoder->EndAudioEncoding(AudioTimeSequence);
 }
 
-void FAVBufferedEncoder::EnqueueVideoFrame_RenderThread(uint8* FrameData, EPixelFormat PixelFormat,
-                                                        uint16 FrameWidth, uint16 FrameHeight, FIntRect CaptureRect,
-                                                        double PresentTime, double Duration)
+void FAVBufferedEncoder::EnqueueVideoFrame_RenderThread(FCapturedVideoFrame VideoFrame)
 {
 	// UE_LOG(LogRecorder, Display, TEXT("Time: RawTime=%lf, Current=%lf, Accumulator==%lf"),
 	// 	FApp::GetCurrentTime(), PresentTime, Duration);
 	// FScopeLogTime timerin(TEXT("InsertVideoToEnqueue"));
 	// UE_LOG(LogRecorder, Display, TEXT("CaptureVideoFrameReadyToSend"));
+	// 后面可以替换一下
+	uint8* FrameData = VideoFrame.FrameData;
+	EPixelFormat PixelFormat = VideoFrame.PixelFormat;
+	uint16 FrameWidth = VideoFrame.FrameWidth;
+	uint16 FrameHeight = VideoFrame.FrameHeight;
+	FIntRect CaptureRect = VideoFrame.CaptureRect;
+	double PresentTime = VideoFrame.PresentTime;
+	double Duration = VideoFrame.Duration;
+
 	FEncodeData* NewData = nullptr;
 	if (VideoBufferPool.IsEmpty())
 	{
