@@ -4,13 +4,14 @@
 #include "Encoder/FFmpegRecorder.h"
 
 #include "AudioDevice.h"
-#include "VideoCapture.h"
-#include "Encoder/AVEncoder.h"
-#include "Encoder/AVEncodeThread.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Misc/App.h"
 #include "Widgets/SWindow.h"
+
+#include "Capture/VideoCapture.h"
+#include "Encoder/AVEncoder.h"
+#include "Encoder/AVEncodeThread.h"
 
 UFFmpegRecorder::UFFmpegRecorder(): RecordConfig()
 {

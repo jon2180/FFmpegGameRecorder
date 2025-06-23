@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "PixelFormat.h"
 #include "HAL/IConsoleManager.h"
 
 #include "RecorderConfig.generated.h"

@@ -1,6 +1,6 @@
 ﻿#include "Capture/VideoCapture.h"
 
-#include "RecorderConfig.h"
+#include "Capture/RecorderConfig.h"
 #include "RHI.h"
 #include "RHICommandList.h"
 #include "RHIResources.h"
@@ -173,11 +173,11 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 		}
 
 		uint8* TextureData;
-		FIntPoint Resolution;
+		FIntPoint OutResolution;
 		{
 			// FScopeLogTime timecr(TEXT("Lock/Unlock"));
 			void* VoidTextureData = nullptr;
-			PreviousGpuReadback->LockTexture(RHICmdList, VoidTextureData, Resolution);
+			PreviousGpuReadback->LockTexture(RHICmdList, VoidTextureData, OutResolution);
 			TextureData = static_cast<uint8*>(VoidTextureData);
 		}
 
@@ -186,12 +186,12 @@ bool FVideoCapture::CopyTextureToQueue_GpuReadToCpu(const FTexture2DRHIRef& Back
 
 		// 强制截取的视频帧包含的画面宽高有效，主要针对 Resize 场景做安全保证
 		auto ClippedRect = RecordArea;
-		ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
+		ClippedRect.Max.ComponentMin(FIntPoint(OutResolution.X, h));
 		{
 			Rst = GetOnSendFrame().ExecuteIfBound(FCapturedVideoFrame{
 				.FrameData =  TextureData,
 				.PixelFormat = BackBuffer->GetFormat(),
-				.FrameWidth = static_cast<uint16>(Resolution.X),
+				.FrameWidth = static_cast<uint16>(OutResolution.X),
 				.FrameHeight = static_cast<uint16>(h),
 				.CaptureRect = ClippedRect,
 				.PresentTime = PreviousGpuReadback->CapturedTime,
@@ -211,7 +211,7 @@ bool FVideoCapture::CopyTextureToQueue_LockTextureToCpu(const FTexture2DRHIRef& 
 	const int w = BackBuffer->GetTexture2D()->GetSizeX();
 	const int h = BackBuffer->GetTexture2D()->GetSizeY();
 
-	FIntPoint Resolution(w, h);
+	FIntPoint OutResolution(w, h);
 	uint8* TextureData;
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE_TEXT("LockTexture2D");
@@ -221,19 +221,19 @@ bool FVideoCapture::CopyTextureToQueue_LockTextureToCpu(const FTexture2DRHIRef& 
 		int FrameWidth = TextureRowStrip / 4;
 		if (RecordArea.Width() != FrameWidth && FrameWidth != 0)
 		{
-			Resolution.X = FrameWidth;
+			OutResolution.X = FrameWidth;
 		}
 	}
 
 	bool Rst = false;
 	// 强制截取的视频帧包含的画面宽高有效，主要针对 Resize 场景做安全保证
 	auto ClippedRect = RecordArea;
-	ClippedRect.Max.ComponentMin(FIntPoint(Resolution.X, h));
+	ClippedRect.Max.ComponentMin(FIntPoint(OutResolution.X, h));
 	{
 		Rst = GetOnSendFrame().ExecuteIfBound(FCapturedVideoFrame{
 			.FrameData = TextureData,
 			.PixelFormat = BackBuffer->GetFormat(),
-			.FrameWidth = static_cast<uint16>(Resolution.X),
+			.FrameWidth = static_cast<uint16>(OutResolution.X),
 			.FrameHeight = static_cast<uint16>(h),
 			.CaptureRect = ClippedRect,
 			.PresentTime = CaptureTsInSeconds,

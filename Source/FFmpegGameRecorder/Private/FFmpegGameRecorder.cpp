@@ -4,7 +4,8 @@
 
 #include "Interfaces/IPluginManager.h"
 #include "Runtime/Projects/Private/PluginManager.h"
-#include "GenericPlatformProcess.h"
+#include "GenericPlatform/GenericPlatformProcess.h"
+#include "Misc/Paths.h"
 
 #define LOCTEXT_NAMESPACE "FFFmpegGameRecorderModule"
 
